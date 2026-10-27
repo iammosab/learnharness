@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { LOCAL_AGENTS, localAgentDescriptor, type LocalAgentAction, type LocalAgentDescriptor, type LocalAgentProviderId, type LocalAgentStatus } from "@/src/core";
+import { localAgentDescriptor, visibleLocalAgents, type LocalAgentAction, type LocalAgentDescriptor, type LocalAgentProviderId, type LocalAgentStatus } from "@/src/core";
 import { Button } from "@/components/ui/button";
 import { notifySettingsSaved } from "@/components/settings-signal";
 import { ConnectionDialog, ConnectionFooter, ConnectionRow } from "./connection-controls";
@@ -129,8 +129,9 @@ export function LocalAgentConnection({ providerId }: { providerId: LocalAgentPro
 	</div>;
 }
 
-export function LocalAgentConnections() {
-	return <div className="space-y-3" data-testid="local-agent-connections">{LOCAL_AGENTS.map((agent) => <LocalAgentConnection key={agent.providerId} providerId={agent.providerId} />)}</div>;
+/** Defaults to the offered connections; pass `providers` to render others (tests). */
+export function LocalAgentConnections({ providers = visibleLocalAgents() }: { providers?: LocalAgentDescriptor[] } = {}) {
+	return <div className="space-y-3" data-testid="local-agent-connections">{providers.map((agent) => <LocalAgentConnection key={agent.providerId} providerId={agent.providerId} />)}</div>;
 }
 
 export function LocalAgentBackgroundAccess({ provider }: { provider: string | undefined }) {

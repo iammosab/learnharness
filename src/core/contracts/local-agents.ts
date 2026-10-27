@@ -31,6 +31,19 @@ export function localAgentDescriptor(providerId: string | undefined): LocalAgent
 	return LOCAL_AGENTS.find((agent) => agent.providerId === providerId);
 }
 
+/**
+ * Connections the settings list does not offer. The routes stay wired and a
+ * connection already switched on keeps working — this hides the rows only,
+ * so nothing new can be connected from the UI. Empty this array to show
+ * them again; it is the whole switch.
+ */
+export const HIDDEN_LOCAL_AGENTS: readonly LocalAgentProviderId[] = ["antigravity", "antigravity-cli"];
+
+/** The connections the settings list offers (see HIDDEN_LOCAL_AGENTS). */
+export function visibleLocalAgents(): LocalAgentDescriptor[] {
+	return LOCAL_AGENTS.filter((agent) => !HIDDEN_LOCAL_AGENTS.includes(agent.providerId));
+}
+
 /** The learner's per-connection choices — the only state LearnHarness persists. */
 export interface LocalAgentPreferences {
 	enabled: boolean;

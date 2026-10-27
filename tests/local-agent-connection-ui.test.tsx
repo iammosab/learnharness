@@ -5,7 +5,7 @@ import { afterEach, test } from "node:test";
 import { createRoot, type Root } from "react-dom/client";
 import { parseHTML } from "linkedom";
 import { LocalAgentBackgroundAccess, LocalAgentConnections, LocalAgentUIProvider, emptyLocalAgentStatus, localAgentNotice } from "../components/settings/local-agent-connections.tsx";
-import { LOCAL_AGENTS, type LocalAgentProviderId, type LocalAgentStatus } from "../src/core/contracts/local-agents.ts";
+import { HIDDEN_LOCAL_AGENTS, LOCAL_AGENTS, visibleLocalAgents, type LocalAgentProviderId, type LocalAgentStatus } from "../src/core/contracts/local-agents.ts";
 
 // Local agent connections (docs/architecture.md §8.2): the Providers rows
 // and dialog over GET/POST /api/connections/local.
@@ -30,7 +30,7 @@ function serve(initial: Partial<Record<LocalAgentProviderId, Partial<LocalAgentS
 	}) as typeof fetch;
 	return { posts };
 }
-async function mount(children: React.ReactNode = <LocalAgentConnections />) {
+async function mount(children: React.ReactNode = <LocalAgentConnections providers={[...LOCAL_AGENTS]} />) {
 	host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 	await act(async () => root!.render(<LocalAgentUIProvider>{children}</LocalAgentUIProvider>));
 	await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
@@ -44,6 +44,14 @@ test("rows name each vendor runtime and start disconnected", async () => {
 	await mount();
 	const rows = [...document.querySelectorAll('[data-testid$="-connection"]')].map((row) => row.textContent);
 	assert.deepEqual(rows, ["Claude (Claude Code)Connect", "Antigravity (Antigravity ACP server)Connect", "Antigravity CLI (agy)Connect"]);
+});
+
+test("the settings list offers only the connections that are not hidden", async () => {
+	serve({});
+	await mount(<LocalAgentConnections />);
+	const rows = [...document.querySelectorAll('[data-testid$="-connection"]')].map((row) => row.getAttribute("data-testid"));
+	assert.deepEqual(rows, visibleLocalAgents().map((a) => `${a.providerId}-connection`));
+	for (const hidden of HIDDEN_LOCAL_AGENTS) assert(!rows.includes(`${hidden}-connection`), hidden);
 });
 
 test("Claude: the dialog discloses the data flow, shows the CLI's own account, and the toggle enables it", async () => {
