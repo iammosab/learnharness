@@ -39,4 +39,6 @@ export interface LocalAgentAdapter {
 	open(run: LocalRun, request: OpenRequest): Promise<RunSession>;
 	/** App-driven sign-in inside the vendor runtime (the runtime opens the browser and keeps the tokens). */
 	signIn?(signal: AbortSignal): Promise<Model<Api>[]>;
+	/** Undo anything the adapter wrote outside the app (agy's allow-rules) when the learner switches the connection off. */
+	onDisable?(): Promise<void>;
 }

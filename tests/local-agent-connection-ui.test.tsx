@@ -5,7 +5,7 @@ import { afterEach, test } from "node:test";
 import { createRoot, type Root } from "react-dom/client";
 import { parseHTML } from "linkedom";
 import { LocalAgentBackgroundAccess, LocalAgentConnections, LocalAgentUIProvider, emptyLocalAgentStatus, localAgentNotice } from "../components/settings/local-agent-connections.tsx";
-import { LOCAL_AGENTS, type LocalAgentStatus } from "../src/core/contracts/local-agents.ts";
+import { LOCAL_AGENTS, type LocalAgentProviderId, type LocalAgentStatus } from "../src/core/contracts/local-agents.ts";
 
 // Local agent connections (docs/architecture.md §8.2): the Providers rows
 // and dialog over GET/POST /api/connections/local.
@@ -15,7 +15,7 @@ let root: Root | undefined, host: HTMLDivElement | undefined;
 const realFetch = globalThis.fetch;
 afterEach(async () => { await act(async () => root?.unmount()); host?.remove(); root = undefined; host = undefined; globalThis.fetch = realFetch; });
 
-function serve(initial: Partial<Record<"claude-code" | "antigravity", Partial<LocalAgentStatus>>>) {
+function serve(initial: Partial<Record<LocalAgentProviderId, Partial<LocalAgentStatus>>>) {
 	let statuses: LocalAgentStatus[] = LOCAL_AGENTS.map((a) => ({ ...emptyLocalAgentStatus(a.providerId), ...initial[a.providerId] }));
 	const posts: Array<[string, unknown]> = [];
 	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -43,7 +43,7 @@ test("rows name each vendor runtime and start disconnected", async () => {
 	serve({});
 	await mount();
 	const rows = [...document.querySelectorAll('[data-testid$="-connection"]')].map((row) => row.textContent);
-	assert.deepEqual(rows, ["Claude (Claude Code)Connect", "Antigravity (Antigravity ACP server)Connect"]);
+	assert.deepEqual(rows, ["Claude (Claude Code)Connect", "Antigravity (Antigravity ACP server)Connect", "Antigravity CLI (agy)Connect"]);
 });
 
 test("Claude: the dialog discloses the data flow, shows the CLI's own account, and the toggle enables it", async () => {

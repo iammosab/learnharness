@@ -3,6 +3,7 @@ import { DEFAULT_LOCAL_AGENT_PREFERENCES, LOCAL_AGENTS, type LocalAgentPreferenc
 import type { LocalAgentPreferenceStore } from "../../core/ports.ts";
 import type { AdmissionScope } from "../subscription-request-cycle.ts";
 import type { AdapterProbe, LocalAgentAdapter } from "./adapter.ts";
+import { agyAdapter } from "./agy.ts";
 import { antigravityAdapter } from "./antigravity.ts";
 import { claudeAdapter } from "./claude.ts";
 import { closeProviderRuns } from "./run.ts";
@@ -36,7 +37,7 @@ interface State {
 const KEY = Symbol.for("lh.localAgents.state");
 function state(): State {
 	const g = globalThis as typeof globalThis & { [KEY]?: State };
-	return (g[KEY] ??= { providers: new Map(), listeners: new Set(), adapters: { "claude-code": claudeAdapter, antigravity: antigravityAdapter }, controllers: new Map() });
+	return (g[KEY] ??= { providers: new Map(), listeners: new Set(), adapters: { "claude-code": claudeAdapter, antigravity: antigravityAdapter, "antigravity-cli": agyAdapter }, controllers: new Map() });
 }
 
 export function isLocalAgentProvider(provider: string | undefined): provider is LocalAgentProviderId {
@@ -137,7 +138,14 @@ export function localAgentModel(provider: string, id: string): Model<Api> | unde
 export function setLocalAgentPreferences(providerId: LocalAgentProviderId, patch: Partial<LocalAgentPreferences>): void {
 	const store = state().preferences;
 	if (!store) throw new Error("Local agent preferences are unavailable.");
-	store.write(providerId, { ...preferences(providerId), ...patch });
+	const before = preferences(providerId);
+	store.write(providerId, { ...before, ...patch });
+	// Switching a connection off undoes whatever its adapter wrote outside
+	// the app (agy's allow-rules). Best effort: never block the preference.
+	if (before.enabled && patch.enabled === false) {
+		const adapter = state().adapters[providerId];
+		void adapter?.onDisable?.().catch(() => { /* the learner can clear it by hand */ });
+	}
 	apply(providerId, undefined);
 	notify();
 }
