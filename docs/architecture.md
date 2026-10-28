@@ -622,6 +622,24 @@ attempt (with every failure) as their next turn.
   Each is proven by executing it, not by being installed. Scala is absent on
   purpose: `scala-cli` fetches its toolchain on first run and the sandbox has no
   network.
+- **Remote engine (Kotlin)**: a third execution tier beside the browser and the
+  sandbox, for a language whose toolchain a host may not carry. `LH_KOTLIN_URL`
+  points at a Kotlin compiler service — either a self-hosted
+  JetBrains/kotlin-compiler-server (Apache-2.0) or the public playground
+  endpoint; both speak `POST /api/<version>/compiler/run`, and
+  `LH_KOTLIN_VERSION` pins the compiler (unpinned follows the service's own
+  `latestStable`). **It is off unless that variable is set**: the public
+  endpoint sends the learner's code to a third party, which is a deployment
+  decision and never a default. Precedence is strict — the local sandbox wins
+  whenever it can serve the language, because nothing leaves the host there and
+  stdin works; the remote service is only a fallback. The reply (every outcome
+  of which arrives as HTTP 200) is normalised by `parseRemoteKotlinRun` into the
+  runner's own wire shape, so the card keeps ONE result vocabulary and
+  `classifyRun` needs no remote-specific branch. Two limits are inherent, not
+  oversights: the protocol carries no stdin, and Kotlin is compiled with no
+  `eval`, so there is no harness to append and the card reports no check
+  verdicts rather than inventing them. This tier is the only path that runs on a
+  host without systemd — the sandbox runner is Linux-and-root only.
 - **The invariant**: a card that asks the learner to run code is only authored
   when the language has an engine (`engineKindFor`), so a Run button that cannot
   work is refused at the tool boundary — never delivered. Read-only drills

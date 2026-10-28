@@ -102,7 +102,7 @@ export interface CodePlaygroundReport {
 
 // ─── engine registry (pure; the truth table the tests pin) ──────────────────
 
-export type EngineKind = "native" | "pyodide" | "pglite" | "runner" | "none";
+export type EngineKind = "native" | "pyodide" | "pglite" | "runner" | "remote" | "none";
 
 export interface Engine {
 	kind: EngineKind;
@@ -110,6 +110,8 @@ export interface Engine {
 	label: string;
 	/** Runner manifest id when kind === "runner". */
 	runnerLanguage?: string;
+	/** Remote compiler-service id when kind === "remote". */
+	remoteLanguage?: string;
 	/** null when nothing can execute the language. */
 	runnable: boolean;
 	/** Stated reason when runnable === false. */
@@ -245,6 +247,20 @@ const RUNNER_LABELS: Record<string, string> = {
 	erlang: "Erlang",
 };
 
+/** Languages a remote compiler service can execute. Kotlin's playground API
+ *  (JetBrains/kotlin-compiler-server, Apache-2.0) speaks one protocol whether
+ *  it is the public endpoint or an instance you host, so one id covers both.
+ *  A remote engine is always a FALLBACK: see resolveEngine's precedence. */
+export const REMOTE_LANGUAGES: Record<string, string> = {
+	kotlin: "kotlin",
+};
+
+/** The remote service's id for a declared language, or null. Canonicalises
+ *  first, so "Kotlin", "kotlin" and "kt" all reach the same entry. */
+export function remoteLanguageFor(language: string): string | null {
+	return REMOTE_LANGUAGES[canonicalLanguage(language)] ?? null;
+}
+
 /** Real programming languages we do not run yet (Zig, Swift, …). A card for
  *  these is still legitimate: it edits, highlights and reports the code; Run is
  *  disabled with the reason. Anything outside this set and the registry —
@@ -300,30 +316,49 @@ export function runnerLanguageFor(language: string): string | null {
 	return RUNNER_LANGUAGES[canonicalLanguage(language)] ?? null;
 }
 
-export function resolveEngine(language: string, runnerAvailable = false, runnerVersion?: string): Engine {
+export function resolveEngine(
+	language: string,
+	runnerAvailable = false,
+	runnerVersion?: string,
+	remote?: { available: boolean; version?: string },
+): Engine {
 	const id = canonicalLanguage(language);
 	const browser = BROWSER[id];
 	if (browser) return browser;
 	// python/sql fall through to the runner below rather than pretending.
 
 	const runnerId = RUNNER_LANGUAGES[id];
-	if (runnerId) {
+	const remoteId = REMOTE_LANGUAGES[id];
+	if (runnerId || remoteId) {
 		const label = RUNNER_LABELS[id] ?? language;
-		if (!runnerAvailable) {
+		// The local sandbox wins whenever it can serve the language: the code
+		// never leaves the host and stdin works there. A remote compiler
+		// service is the fallback, never the preference.
+		if (runnerId && runnerAvailable) {
 			return {
-				kind: "none",
+				kind: "runner",
 				label,
-				runnable: false,
-				reason: `${label} runs in the sandbox runner, which is not configured or not reachable. Editing and feedback still work.`,
+				runnerLanguage: runnerId,
+				runnable: true,
+				...(runnerVersion ? { reason: runnerVersion } : {}),
 			};
 		}
-		return {
-			kind: "runner",
-			label,
-			runnerLanguage: runnerId,
-			runnable: true,
-			...(runnerVersion ? { reason: runnerVersion } : {}),
-		};
+		if (remoteId && remote?.available) {
+			return {
+				kind: "remote",
+				label,
+				remoteLanguage: remoteId,
+				runnable: true,
+				...(remote.version ? { reason: remote.version } : {}),
+			};
+		}
+		const how =
+			runnerId && remoteId
+				? `${label} runs in the sandbox runner or a remote compiler service; neither is configured or reachable.`
+				: runnerId
+					? `${label} runs in the sandbox runner, which is not configured or not reachable.`
+					: `${label} runs in a remote compiler service, which is not configured.`;
+		return { kind: "none", label, runnable: false, reason: `${how} Editing and feedback still work.` };
 	}
 
 	return {
@@ -393,4 +428,119 @@ export function formatReport(r: CodePlaygroundReport): string {
 	}
 	if (r.runs.length > 1) lines.push(`(I ran it ${r.runs.length} times; the last run is above.)`);
 	return lines.join("\n");
+}
+
+// ─── remote Kotlin compiler service (pure wire mapping) ─────────────────────
+
+/**
+ * The compiler service's reply, as observed against
+ * `api.kotlinlang.org/api/<version>/compiler/run` (2026-10-28) and the
+ * self-hosted JetBrains/kotlin-compiler-server, which speak the same protocol.
+ *
+ * Every outcome — success, compile error, thrown exception, execution cap —
+ * arrives as HTTP 200 with the verdict in the body, so the status line says
+ * nothing and this mapping is the only thing that decides what happened.
+ */
+export interface RemoteKotlinResponse {
+	/** Keyed by file name; holds ERRORs and WARNINGs together. */
+	errors?: Record<
+		string,
+		Array<{
+			message?: string;
+			severity?: string;
+			/** Zero-based line/column, unlike every compiler that prints text. */
+			interval?: { start?: { line?: number; ch?: number } | null } | null;
+		}> | null
+	> | null;
+	exception?: {
+		message?: string | null;
+		fullName?: string | null;
+		stackTrace?: Array<{
+			className?: string | null;
+			methodName?: string | null;
+			fileName?: string | null;
+			lineNumber?: number | null;
+		}> | null;
+	} | null;
+	/** Program output, wrapped in `<outStream>`/`<errStream>` pseudo-tags. */
+	text?: string | null;
+}
+
+/** The sandbox runner's wire shape. The remote engine normalises into it so
+ *  that ONE card branch and one `classifyRun` call serve both engines — a new
+ *  engine must not grow a second result vocabulary. */
+export interface SandboxRunBody {
+	compile: { ok: boolean; stderr: string; exit: number | null };
+	run: { stdout: string; stderr?: string; exit: number | null; timedOut: boolean };
+}
+
+/** The service's wording when it cuts an execution short. Matched loosely: it
+ *  is prose, not a contract, and it has carried a stray glyph. */
+export const REMOTE_TIMEOUT_MARKER = "taking too long";
+
+/** `timeout(1)`'s exit code, which the sandbox runner reports for the same
+ *  condition. Kept identical so neither engine is a special case downstream. */
+const TIMEOUT_EXIT = 124;
+
+const STREAM_SEGMENT = /<(outStream|errStream)>([\s\S]*?)<\/\1>/g;
+
+/** Map one remote reply onto the runner's shape. Pure: the route does IO, this
+ *  decides meaning, and the tests pin every branch. */
+export function parseRemoteKotlinRun(raw: RemoteKotlinResponse): SandboxRunBody {
+	// Only ERROR stops a compile; WARNINGs (deprecations, unused values) would
+	// otherwise read to the learner as "your code is broken".
+	const diagnostics = Object.entries(raw.errors ?? {}).flatMap(([file, list]) =>
+		(list ?? [])
+			.filter((d) => (d.severity ?? "").toUpperCase() === "ERROR")
+			.map((d) => {
+				const line = (d.interval?.start?.line ?? 0) + 1;
+				const ch = (d.interval?.start?.ch ?? 0) + 1;
+				return `${file}:${line}:${ch}: error: ${d.message ?? "error"}`;
+			}),
+	);
+	if (diagnostics.length) {
+		return {
+			compile: { ok: false, stderr: diagnostics.join("\n"), exit: 1 },
+			run: { stdout: "", exit: null, timedOut: false },
+		};
+	}
+
+	let stdout = "";
+	let stderr = "";
+	for (const seg of (raw.text ?? "").matchAll(STREAM_SEGMENT)) {
+		if (seg[1] === "outStream") stdout += seg[2];
+		else stderr += seg[2];
+	}
+
+	// The cap is reported as prose on the error stream, never as an exception.
+	if (stderr.includes(REMOTE_TIMEOUT_MARKER)) {
+		return {
+			compile: { ok: true, stderr: "", exit: 0 },
+			run: { stdout, stderr: stderr.trim(), exit: TIMEOUT_EXIT, timedOut: true },
+		};
+	}
+
+	if (raw.exception) {
+		const head = [raw.exception.fullName, raw.exception.message].filter(Boolean).join(": ");
+		// Keep only frames a learner can act on: no fileName means a JDK
+		// internal, and a non-positive line is a synthetic frame the service
+		// emits for the entry point.
+		const frames = (raw.exception.stackTrace ?? [])
+			.filter((f) => f?.fileName && (f.lineNumber ?? 0) > 0)
+			.map((f) => `\tat ${f.className ?? "?"}.${f.methodName ?? "?"}(${f.fileName}:${f.lineNumber ?? "?"})`);
+		return {
+			compile: { ok: true, stderr: "", exit: 0 },
+			run: {
+				stdout,
+				stderr: [head || "exception", ...frames].join("\n"),
+				exit: 1,
+				timedOut: false,
+			},
+		};
+	}
+
+	return {
+		compile: { ok: true, stderr: "", exit: 0 },
+		run: { stdout, ...(stderr.trim() ? { stderr: stderr.trim() } : {}), exit: 0, timedOut: false },
+	};
 }

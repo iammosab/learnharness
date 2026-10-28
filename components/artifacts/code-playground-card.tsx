@@ -8,6 +8,9 @@
  *    no same-origin, so no access to the app or its API
  *  - runner (C, C++, Rust, …): POST /api/code/run, which forwards to the
  *    loopback sandbox service. The browser never holds the runner token.
+ *  - remote (Kotlin): the same POST, which the route forwards to a Kotlin
+ *    compiler service and normalises into the runner's reply shape — so this
+ *    file needs no second result vocabulary. Off unless LH_KOTLIN_URL is set.
  *  - none: the editor still works and the attempt can still be sent; Run is
  *    disabled with the stated reason.
  *
@@ -139,6 +142,8 @@ export function CodePlaygroundCard({ part }: ArtifactPartProps) {
 	const [runs, setRuns] = useState<RunResult[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [runnerOk, setRunnerOk] = useState(false);
+	const [remoteOk, setRemoteOk] = useState(false);
+	const [remoteVersion, setRemoteVersion] = useState<string | undefined>(undefined);
 	const [runnerChecked, setRunnerChecked] = useState(false);
 	const [sent, setSent] = useState(false);
 	const [prediction, setPrediction] = useState("");
@@ -148,10 +153,12 @@ export function CodePlaygroundCard({ part }: ArtifactPartProps) {
 	useEffect(() => {
 		let alive = true;
 		fetch("/api/code/run", { cache: "no-store" })
-			.then((r) => (r.ok ? r.json() : { runnerAvailable: false }))
-			.then((d: { runnerAvailable?: boolean }) => {
+			.then((r) => (r.ok ? r.json() : { runnerAvailable: false, remoteAvailable: false }))
+			.then((d: { runnerAvailable?: boolean; remoteAvailable?: boolean; remoteVersion?: string }) => {
 				if (alive) {
 					setRunnerOk(Boolean(d.runnerAvailable));
+					setRemoteOk(Boolean(d.remoteAvailable));
+					setRemoteVersion(d.remoteVersion);
 					setRunnerChecked(true);
 				}
 			})
@@ -166,7 +173,10 @@ export function CodePlaygroundCard({ part }: ArtifactPartProps) {
 	// Optimistic until the runner check answers: a disabled button on first paint
 	// reads as "broken", and the POST reports the truth anyway.
 	const needsRunner = input.language in RUNNER_LANGUAGES || Boolean(RUNNER_LANGUAGES[canonicalLanguage(input.language)]);
-	const engine = resolveEngine(input.language, runnerOk || !runnerChecked);
+	const engine = resolveEngine(input.language, runnerOk || !runnerChecked, undefined, {
+		available: remoteOk,
+		version: remoteVersion,
+	});
 	const last = runs[runs.length - 1];
 
 	async function run() {
@@ -176,9 +186,15 @@ export function CodePlaygroundCard({ part }: ArtifactPartProps) {
 		if (engine.kind === "native") {
 			const runnable = await toRunnable(input!.language, code);
 			result = await runInWorker(runnable, input!.checks);
-		} else if (engine.kind === "runner" || engine.kind === "pyodide" || engine.kind === "pglite") {
+		} else if (
+			engine.kind === "runner" ||
+			engine.kind === "remote" ||
+			engine.kind === "pyodide" ||
+			engine.kind === "pglite"
+		) {
 			// pyodide/pglite have no client runtime yet; the registry routes those
 			// languages to the sandbox, so this branch is the honest executor.
+			// "remote" arrives here too: the route answers in the same shape.
 			try {
 				const res = await fetch("/api/code/run", {
 					method: "POST",
