@@ -421,7 +421,15 @@ export function formatReport(r: CodePlaygroundReport): string {
 	lines.push(`Failure kind: ${last.errorKind}.`);
 	if (last.compileError) lines.push(`It does not compile:\n${last.compileError.trim()}`);
 	else if (last.timedOut) lines.push("It ran but timed out (infinite loop or too slow).");
-	else if (last.stdout) lines.push(`Output:\n${last.stdout.trim()}`);
+	else {
+		// Both streams, and not as alternatives: a program can print and THEN
+		// throw. The sandbox runner merges them with 2>&1 so its stderr is
+		// empty here, but engines that keep them apart (native, remote) carry
+		// the exception text in stderr — without this the teacher is told only
+		// "Failure kind: runtime" and cannot name the fault the learner saw.
+		if (last.stdout) lines.push(`Output:\n${last.stdout.trim()}`);
+		if (last.stderr) lines.push(`Error output:\n${last.stderr.trim()}`);
+	}
 	if (last.checks?.length) {
 		lines.push("Checks:");
 		for (const c of last.checks) lines.push(`- ${c.pass ? "PASS" : "FAIL"} ${c.label}`);

@@ -6,6 +6,7 @@ import {
 	remoteLanguageFor,
 	resolveEngine,
 	classifyRun,
+	formatReport,
 	type RemoteKotlinResponse,
 } from "../src/core/code-playground.ts";
 
@@ -262,4 +263,37 @@ test("an uncompilable check file is the author's fault and is named as such", ()
 	assert.equal(kotlinCheckFileBroken(broken), "Unresolved reference 'nope'.");
 	assert.equal(kotlinCheckFileBroken({ errors: { [KOTLIN_CHECK_FILE]: [] } }), null);
 	assert.equal(kotlinCheckFileBroken({}), null);
+});
+
+test("the report carries the exception text, not just the failure kind", () => {
+	// A thrown Kotlin program: the engine puts the message in stderr, and the
+	// teacher must be able to name the fault the learner just saw on screen.
+	const mapped = parseRemoteKotlinRun(THREW);
+	const text = formatReport({
+		language: "kotlin",
+		engine: "remote",
+		code: "fun main() { println(listOf(1,2,3)[10]) }",
+		attempts: 1,
+		sentAt: "2026-10-28T00:00:00Z",
+		runs: [
+			{
+				ok: false,
+				stdout: mapped.run.stdout,
+				stderr: mapped.run.stderr,
+				errorKind: classifyRun({ compileOk: true, exit: mapped.run.exit, timedOut: false }),
+			},
+		],
+	});
+	assert.match(text, /Failure kind: runtime\./);
+	assert.match(text, /Error output:/);
+	assert.match(text, /ArrayIndexOutOfBoundsException: Index 10 out of bounds/);
+});
+
+test("a program that prints AND throws reports both streams", () => {
+	const text = formatReport({
+		language: "kotlin", engine: "remote", code: "x", attempts: 1, sentAt: "2026-10-28T00:00:00Z",
+		runs: [{ ok: false, stdout: "step one\n", stderr: "java.lang.IllegalStateException: boom", errorKind: "runtime" }],
+	});
+	assert.match(text, /Output:\nstep one/);
+	assert.match(text, /Error output:\njava\.lang\.IllegalStateException: boom/);
 });
