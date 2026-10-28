@@ -4,10 +4,16 @@ import { readFileSync } from "node:fs";
 import {
 	RUNNER_LANGUAGES,
 	REMOTE_LANGUAGES,
+	KOTLIN_CHECK_FILE,
+	buildKotlinCheckFile,
+	kotlinCheckFileBroken,
+	parseRemoteKotlinChecks,
 	parseRemoteKotlinRun,
 	remoteLanguageFor,
 	runnerLanguageFor,
+	type RemoteCheck,
 	type RemoteKotlinResponse,
+	type RemoteKotlinTestResponse,
 } from "@/src/core";
 
 export const dynamic = "force-dynamic";
@@ -95,10 +101,15 @@ async function runnerSupports(runnerLanguage: string): Promise<boolean> {
 }
 
 /** Normalised into the runner's own wire shape by parseRemoteKotlinRun, so the
- *  card has one result vocabulary. `checks` is deliberately absent: Kotlin is
- *  compiled and has no eval, so there is no harness to append — the card then
- *  shows no verdicts rather than inventing them. */
-async function runRemoteKotlin(code: string): Promise<Response> {
+ *  card has one result vocabulary.
+ *
+ *  Checks go through the service's JUnit endpoint rather than an appended
+ *  harness: Kotlin has no runtime eval, but an expression over the learner's
+ *  top-level declarations compiles against them from a second file. That
+ *  endpoint runs the TESTS ONLY — it never calls main — so the program still
+ *  has to run for stdout and the prediction. Both requests go out together:
+ *  the cost is one round trip, not two. */
+async function runRemoteKotlin(code: string, checks: RemoteCheck[]): Promise<Response> {
 	const h = await kotlinHealth();
 	if (!h) {
 		return Response.json(
@@ -106,24 +117,51 @@ async function runRemoteKotlin(code: string): Promise<Response> {
 			{ status: 503 },
 		);
 	}
-	try {
-		const res = await fetch(`${KOTLIN_URL}/api/${h.version}/compiler/run`, {
+	// File.kt is the playground's own name; diagnostics come back keyed by it,
+	// and a top-level main compiles to FileKt.
+	const source = [{ name: "File.kt", text: code }];
+	const post = (path: string, files: Array<{ name: string; text: string }>) =>
+		fetch(`${KOTLIN_URL}/api/${h.version}/compiler/${path}`, {
 			method: "POST",
 			headers: { "content-type": "application/json", accept: "application/json" },
-			// File.kt is the playground's own name; the diagnostics come back keyed
-			// by it, and a top-level main compiles to FileKt.
-			body: JSON.stringify({ args: "", files: [{ name: "File.kt", text: code }] }),
+			body: JSON.stringify({ args: "", files }),
 			signal: AbortSignal.timeout(60_000),
 		});
-		if (!res.ok) {
+	try {
+		const [runRes, testRes] = await Promise.all([
+			post("run", source),
+			checks.length
+				? post("test", [...source, { name: KOTLIN_CHECK_FILE, text: buildKotlinCheckFile(checks) }])
+				: Promise.resolve(null),
+		]);
+		if (!runRes.ok) {
 			return Response.json(
-				{ error: `Kotlin compiler service error (${res.status}).`, code: "code_remote_error" },
+				{ error: `Kotlin compiler service error (${runRes.status}).`, code: "code_remote_error" },
 				{ status: 502 },
 			);
 		}
-		const mapped = parseRemoteKotlinRun((await res.json()) as RemoteKotlinResponse);
+		const mapped = parseRemoteKotlinRun((await runRes.json()) as RemoteKotlinResponse);
+		let verdicts: Array<{ label: string; pass: boolean }> | undefined;
+		let checksError: string | undefined;
+		// Code that does not compile fails every check by definition; reporting
+		// a wall of crosses on top of the compiler error teaches nothing.
+		if (testRes?.ok && mapped.compile.ok) {
+			const parsed = (await testRes.json()) as RemoteKotlinTestResponse;
+			const broken = kotlinCheckFileBroken(parsed);
+			// A check that will not compile is the author's mistake, not the
+			// learner's: say so instead of marking their work wrong.
+			if (broken) checksError = broken;
+			else verdicts = parseRemoteKotlinChecks(parsed, checks);
+		}
 		return Response.json(
-			{ engine: "remote", language: "kotlin", version: h.version, ...mapped },
+			{
+				engine: "remote",
+				language: "kotlin",
+				version: h.version,
+				...mapped,
+				...(verdicts?.length ? { checks: verdicts } : {}),
+				...(checksError ? { checksError } : {}),
+			},
 			{ headers: { "cache-control": "no-store" } },
 		);
 	} catch {
@@ -180,6 +218,13 @@ export async function POST(req: Request) {
 	// Engine choice mirrors core's resolveEngine: the local sandbox first, a
 	// remote service only as a fallback. With no LH_KOTLIN_URL this is false
 	// and every line below is the original runner path.
+	const authoredChecks: RemoteCheck[] = Array.isArray(body.checks)
+		? (body.checks as RemoteCheck[])
+				.slice(0, 12)
+				.filter((c) => typeof c?.expr === "string" && c.expr.trim())
+				.map((c) => ({ expr: c.expr, expect: String(c.expect ?? ""), label: String(c.label ?? c.expr) }))
+		: [];
+
 	const remoteCapable = Boolean(remoteLanguage) && Boolean(KOTLIN_URL);
 	const useRemote =
 		remoteCapable && !(RUNNER_ENABLED && runnerLanguage && (await runnerSupports(runnerLanguage)));
@@ -191,7 +236,7 @@ export async function POST(req: Request) {
 		if (wait) return wait;
 		inFlight += 1;
 		try {
-			return await runRemoteKotlin(code);
+			return await runRemoteKotlin(code, authoredChecks);
 		} finally {
 			inFlight -= 1;
 		}

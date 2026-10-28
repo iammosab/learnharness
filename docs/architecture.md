@@ -645,11 +645,25 @@ attempt (with every failure) as their next turn.
   stdin works; the remote service is only a fallback. The reply (every outcome
   of which arrives as HTTP 200) is normalised by `parseRemoteKotlinRun` into the
   runner's own wire shape, so the card keeps ONE result vocabulary and
-  `classifyRun` needs no remote-specific branch. Two limits are inherent, not
-  oversights: the protocol carries no stdin, and Kotlin is compiled with no
-  `eval`, so there is no harness to append and the card reports no check
-  verdicts rather than inventing them. This tier is the only path that runs on a
-  host without systemd — the sandbox runner is Linux-and-root only.
+  `classifyRun` needs no remote-specific branch. This tier is the only path that
+  runs on a host without systemd — the sandbox runner is Linux-and-root only.
+- **Remote checks run as JUnit, not as an appended harness**: Kotlin is compiled
+  and has no runtime `eval`, so the Python/Ruby trick of evaluating the authored
+  expression inside the program does not transfer. It does not need to: the
+  service's `compiler/test` endpoint compiles a generated `lh-checks.kt`
+  against the learner's TOP-LEVEL declarations and reports each assertion, so a
+  failure carries real expected-vs-actual text instead of a bare cross. The
+  authored `{expr, expect, label}` contract is unchanged — `buildKotlinCheckFile`
+  compiles it, comparing textually as the contract promises. That endpoint runs
+  the tests ONLY and never calls `main`, so the run and the test requests go out
+  together and the program's stdout (and therefore the prediction) survives.
+  Checks are suppressed when the learner's code does not compile — a wall of
+  crosses under a compiler error teaches nothing — and a check file that will
+  not compile is reported as the AUTHOR's mistake (`checksError`), never as the
+  learner being wrong. **stdin remains unavailable**: `RunRequest` carries no
+  such field and the server closes the child's stdin at startup, so a
+  `readln()` exercise needs the sandbox runner (or a patched self-hosted
+  service).
 - **The invariant**: a card that asks the learner to run code is only authored
   when the language has an engine (`engineKindFor`), so a Run button that cannot
   work is refused at the tool boundary — never delivered. Read-only drills

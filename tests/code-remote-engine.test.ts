@@ -166,3 +166,100 @@ test("the pre-existing engine truth table is unchanged", () => {
 	assert.equal(resolveEngine("python", true).kind, "runner");
 	assert.equal(resolveEngine("braincraft").kind, "none");
 });
+
+// ─── JUnit-backed checks ────────────────────────────────────────────────────
+
+import {
+	KOTLIN_CHECK_CLASS,
+	KOTLIN_CHECK_FILE,
+	buildKotlinCheckFile,
+	kotlinCheckFileBroken,
+	parseRemoteKotlinChecks,
+	type RemoteCheck,
+	type RemoteKotlinTestResponse,
+} from "../src/core/code-playground.ts";
+
+const CHECKS: RemoteCheck[] = [
+	{ expr: "sum(2, 3)", expect: "5", label: "sum(2,3) is 5" },
+	{ expr: "sum(10, 1)", expect: "11", label: "sum(10,1) is 11" },
+];
+
+test("checks compile into one JUnit method each, named by position", () => {
+	const src = buildKotlinCheckFile(CHECKS);
+	assert.match(src, /^import org\.junit\.Assert$/m);
+	assert.match(src, new RegExp(`^class ${KOTLIN_CHECK_CLASS} \\{$`, "m"));
+	assert.match(src, /@Test fun check0\(\)/);
+	assert.match(src, /@Test fun check1\(\)/);
+	// Two-arg assertEquals: the label is the card's to add, not JUnit's.
+	assert.match(src, /Assert\.assertEquals\("5", \(sum\(2, 3\)\)\.toString\(\)\)/);
+	assert.doesNotMatch(src, /assertEquals\("sum/, "the label must not become the assertion message");
+});
+
+test("a Kotlin string literal interpolates, so $ escapes with the rest", () => {
+	const src = buildKotlinCheckFile([
+		{ expr: "greet()", expect: 'say "$name"\\n', label: "quotes, dollar, backslash" },
+	]);
+	// Built as a plain string rather than a regex: the escaping is the subject
+	// of the test, so a second layer of it would obscure what is asserted.
+	assert.ok(
+		src.includes('Assert.assertEquals("say \\"\\$name\\"\\\\n", (greet()).toString())'),
+		src,
+	);
+	// Every dollar must be backslash-escaped, or Kotlin reads a template.
+	for (let i = 0; i < src.length; i++) {
+		if (src[i] === "$") assert.equal(src[i - 1], "\\", `unescaped $ at ${i}: ${src.slice(i - 12, i + 12)}`);
+	}
+});
+
+test("verdicts map by method name, because JUnit promises no order", () => {
+	const raw: RemoteKotlinTestResponse = {
+		testResults: {
+			LhChecks: [
+				// Deliberately reversed relative to the authored order.
+				{ methodName: "check1", status: "OK", comparisonFailure: null },
+				{ methodName: "check0", status: "FAIL", comparisonFailure: { message: "expected:<5> but was:<-1>" } },
+			],
+		},
+	};
+	const out = parseRemoteKotlinChecks(raw, CHECKS);
+	assert.equal(out.length, 2);
+	assert.equal(out[0]!.pass, false, "check0 failed even though it was reported second");
+	assert.equal(out[0]!.label, "sum(2,3) is 5 — expected:<5> but was:<-1>");
+	assert.equal(out[1]!.pass, true);
+	assert.equal(out[1]!.label, "sum(10,1) is 11", "a pass carries no diagnostic");
+});
+
+test("a check the run never reported fails rather than vanishing", () => {
+	const out = parseRemoteKotlinChecks({ testResults: { LhChecks: [{ methodName: "check0", status: "OK" }] } }, CHECKS);
+	assert.deepEqual(out.map((c) => c.pass), [true, false]);
+});
+
+test("a thrown check reports the exception, not a bare cross", () => {
+	const out = parseRemoteKotlinChecks(
+		{
+			testResults: {
+				LhChecks: [
+					{ methodName: "check0", status: "FAIL", exception: { fullName: "java.lang.IllegalStateException", message: "boom" } },
+				],
+			},
+		},
+		[CHECKS[0]!],
+	);
+	assert.equal(out[0]!.pass, false);
+	assert.match(out[0]!.label, /java\.lang\.IllegalStateException: boom/);
+});
+
+test("an uncompilable check file is the author's fault and is named as such", () => {
+	const broken: RemoteKotlinTestResponse = {
+		errors: {
+			"File.kt": [],
+			[KOTLIN_CHECK_FILE]: [
+				{ message: "Unresolved reference 'nope'.", severity: "ERROR" },
+				{ message: "Variable is unused.", severity: "WARNING" },
+			],
+		},
+	};
+	assert.equal(kotlinCheckFileBroken(broken), "Unresolved reference 'nope'.");
+	assert.equal(kotlinCheckFileBroken({ errors: { [KOTLIN_CHECK_FILE]: [] } }), null);
+	assert.equal(kotlinCheckFileBroken({}), null);
+});

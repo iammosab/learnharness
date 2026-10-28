@@ -544,3 +544,100 @@ export function parseRemoteKotlinRun(raw: RemoteKotlinResponse): SandboxRunBody 
 		run: { stdout, ...(stderr.trim() ? { stderr: stderr.trim() } : {}), exit: 0, timedOut: false },
 	};
 }
+
+// ─── remote Kotlin checks, via the JUnit endpoint ───────────────────────────
+
+/** One authored check, as the tool contract carries it. */
+export interface RemoteCheck {
+	expr: string;
+	expect: string;
+	label: string;
+}
+
+/** `/compiler/test`'s reply: JUnit results keyed by class, plus the same
+ *  per-file diagnostics `/compiler/run` returns. */
+export interface RemoteKotlinTestResponse {
+	testResults?: Record<
+		string,
+		Array<{
+			methodName?: string | null;
+			status?: string | null;
+			output?: string | null;
+			comparisonFailure?: { message?: string | null } | null;
+			exception?: { message?: string | null; fullName?: string | null } | null;
+		}> | null
+	> | null;
+	errors?: RemoteKotlinResponse["errors"];
+}
+
+/** The generated test class and its method prefix. Deterministic, because the
+ *  verdicts come back keyed by method name in whatever order JUnit ran them. */
+export const KOTLIN_CHECK_CLASS = "LhChecks";
+export const KOTLIN_CHECK_FILE = "lh-checks.kt";
+const checkMethod = (i: number) => `check${i}`;
+
+/** Kotlin string literals interpolate `$`, so it escapes alongside the usual
+ *  backslash, quote and newline. */
+function kotlinLiteral(value: string): string {
+	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$/g, "\\$").replace(/\r?\n/g, "\\n");
+}
+
+/**
+ * Compile the authored checks into a JUnit class.
+ *
+ * Kotlin has no runtime eval, so a check cannot be evaluated the way Python's
+ * and Ruby's harnesses do. It does not need to be: an expression over the
+ * learner's TOP-LEVEL declarations compiles against them from a second file,
+ * and JUnit reports each one. Comparison stays textual, which is what the
+ * contract promises ("compare as text so teachers need no type games").
+ */
+export function buildKotlinCheckFile(checks: RemoteCheck[]): string {
+	const methods = checks.map((c, i) => {
+		const expect = kotlinLiteral(c.expect);
+		// Two-arg assertEquals on purpose: JUnit would otherwise echo the
+		// message back inside comparisonFailure, and the card prepends the
+		// label itself — the three-arg form reads as a stutter.
+		// The expression is Kotlin source, not data — it is the authored check.
+		return `\t@Test fun ${checkMethod(i)}() {\n\t\tAssert.assertEquals("${expect}", (${c.expr}).toString())\n\t}`;
+	});
+	return ["import org.junit.Assert", "import org.junit.Test", "", `class ${KOTLIN_CHECK_CLASS} {`, ...methods, "}", ""].join("\n");
+}
+
+/** Did the generated check file itself fail to compile? That is the author's
+ *  mistake, never the learner's, and it must not be reported as "your code
+ *  does not compile". */
+export function kotlinCheckFileBroken(raw: RemoteKotlinTestResponse): string | null {
+	const list = raw.errors?.[KOTLIN_CHECK_FILE] ?? null;
+	const errs = (list ?? []).filter((d) => (d.severity ?? "").toUpperCase() === "ERROR");
+	return errs.length ? errs.map((d) => d.message ?? "error").join("; ") : null;
+}
+
+/**
+ * Map JUnit results back onto the card's verdicts, by METHOD NAME: JUnit makes
+ * no promise about execution order, so position would be a guess. A check the
+ * run never reported is reported as failed rather than quietly dropped.
+ */
+export function parseRemoteKotlinChecks(
+	raw: RemoteKotlinTestResponse,
+	checks: RemoteCheck[],
+): Array<{ label: string; pass: boolean }> {
+	const byMethod = new Map<string, { status: string; detail: string }>();
+	for (const results of Object.values(raw.testResults ?? {})) {
+		for (const r of results ?? []) {
+			if (!r?.methodName) continue;
+			const detail =
+				r.comparisonFailure?.message ??
+				[r.exception?.fullName, r.exception?.message].filter(Boolean).join(": ");
+			byMethod.set(r.methodName, { status: (r.status ?? "").toUpperCase(), detail: detail ?? "" });
+		}
+	}
+	return checks.map((c, i) => {
+		const label = c.label || c.expr;
+		const got = byMethod.get(checkMethod(i));
+		if (!got) return { label, pass: false };
+		if (got.status === "OK") return { label, pass: true };
+		// The teacher reads these: "expected:<99> but was:<2>" is the whole
+		// point of using real assertions instead of a string compare.
+		return { label: got.detail ? `${label} — ${got.detail}` : label, pass: false };
+	});
+}
