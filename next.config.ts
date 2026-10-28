@@ -91,6 +91,12 @@ const nextConfig: NextConfig = {
 			"node_modules/@earendil-works/pi-ai/dist/auth/oauth/{load,github-copilot,xai,device-code}.js",
 			"node_modules/@earendil-works/pi-ai/dist/utils/sleep.js",
 			"node_modules/@earendil-works/pi-agent-core/dist/**/*.json",
+			// The Antigravity CLI spawns this shim by path at runtime (its MCP
+			// config takes a command, not a header), so nothing imports it and
+			// the tracer cannot see it. Without it every bridged tool call on
+			// that connection fails in a packaged build only. It stays above
+			// the closure workaround below, which must remain the last three.
+			"src/agent/local-agents/agy-mcp-stdio.mjs",
 			// Next 16.3.2 native Turbopack applies unanchored excludes while
 			// traversing modules; **/data/**/* still prunes gcp-metadata and
 			// its private runtime chain. Includes are applied after traversal.

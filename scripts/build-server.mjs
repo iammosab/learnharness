@@ -82,6 +82,8 @@ for (const extra of ["dist", path.join("node_modules", "electron")]) {
 for (const asset of [
 	path.join("src", "agent", "system-prompt.md"),
 	path.join("src", "agent", "prompts", "teacher", "20-teaching.md"),
+	// Spawned by path by the Antigravity CLI connection; nothing imports it.
+	path.join("src", "agent", "local-agents", "agy-mcp-stdio.mjs"),
 ]) {
 	if (!exists(path.join(STANDALONE, asset))) {
 		console.error(`[build-server] prompt asset missing from the trace: ${asset}`);

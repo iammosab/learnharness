@@ -24,6 +24,7 @@
 		"desktop:dist": "rm -rf dist .next/standalone && next build && node scripts/smoke-provider-runtime.mjs && node scripts/build-server.mjs && node scripts/smoke-server.mjs && DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} APPLE_KEYCHAIN_PROFILE=LH_NOTARY APPLE_TEAM_ID=JS6XN22HY6 electron-builder --mac --arm64"
 	},
 	"dependencies": {
+		"@agentclientprotocol/sdk": "2.0.2",
 		"@codemirror/commands": "^6.11.1",
 		"@codemirror/lang-cpp": "^6.0.3",
 		"@codemirror/lang-java": "^6.0.2",

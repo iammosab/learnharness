@@ -8,6 +8,7 @@ import { parseHTML } from "linkedom";
 import { NativeSubscriptionConnection, NativeSubscriptionUIProvider, SubscriptionConnections, COPILOT_POLICY_NOTICE, emptySubscriptionStatus } from "../components/settings/subscription-connections.tsx";
 import { ChatGPTUIProvider } from "../components/settings/chatgpt-connection.tsx";
 import type { NativeSubscriptionControlBridge, NativeSubscriptionProviderId, NativeSubscriptionStatus } from "../src/core/contracts/subscriptions.ts";
+import { HIDDEN_LOCAL_AGENTS } from "../src/core/contracts/local-agents.ts";
 const dom = parseHTML("<html><body></body></html>");
 Object.assign(globalThis, { window: dom.window, document: dom.document, Element: dom.window.Element, HTMLElement: dom.window.HTMLElement, CustomEvent: dom.window.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root | undefined, host: HTMLDivElement | undefined;
@@ -45,11 +46,15 @@ async function click(element: HTMLElement) { assert(element); await act(async ()
 async function connectionStep(id: string) { await click(button("Connect", row(id))); await click(button("Continue", dialog())); }
 afterEach(async () => { await act(async () => root?.unmount()); host?.remove(); root = undefined; host = undefined; delete window.lh; });
 
-test("three compact rows render in approved order with no browser-only sign-in or fabricated identities", () => {
+test("compact rows render in approved order with no browser-only sign-in or fabricated identities", () => {
 	const html = renderToStaticMarkup(<ChatGPTUIProvider><NativeSubscriptionUIProvider><SubscriptionConnections /></NativeSubscriptionUIProvider></ChatGPTUIProvider>);
 	assert(html.indexOf('data-testid="chatgpt-connection"') < html.indexOf('data-testid="github-copilot-connection"'));
 	assert(html.indexOf('data-testid="github-copilot-connection"') < html.indexOf('data-testid="xai-connection"'));
-	assert.equal((html.match(/>Connect<\/button>/g) ?? []).length, 3);
+	// Local agent connections (§8.2) follow the app-owned sign-ins.
+	assert(html.indexOf('data-testid="xai-connection"') < html.indexOf('data-testid="claude-code-connection"'));
+	// The Antigravity routes stay wired but are not offered here (HIDDEN_LOCAL_AGENTS).
+	for (const hidden of HIDDEN_LOCAL_AGENTS) assert(!html.includes(`data-testid="${hidden}-connection"`), hidden);
+	assert.equal((html.match(/>Connect<\/button>/g) ?? []).length, 4);
 	assert(!html.includes("@")); assert(!html.includes("Add accounts"));
 });
 for (const [id, label] of [["github-copilot", "GitHub Copilot"], ["xai", "Grok"]] as const) test(`${id}: disclosure and connection are separate steps with no duplicated content or early authorization`, async () => {
