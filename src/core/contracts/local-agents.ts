@@ -5,7 +5,7 @@
  * persisted provider ids are distinct routes — they never fall back to API
  * keys or to the app's own subscription connections.
  */
-export type LocalAgentProviderId = "claude-code" | "antigravity" | "antigravity-cli";
+export type LocalAgentProviderId = "antigravity" | "antigravity-cli";
 
 export interface LocalAgentDescriptor {
 	providerId: LocalAgentProviderId;
@@ -22,7 +22,6 @@ export interface LocalAgentDescriptor {
 }
 
 export const LOCAL_AGENTS: readonly LocalAgentDescriptor[] = [
-	{ providerId: "claude-code", label: "Claude", vendor: "Anthropic", runtime: "Claude Code", installUrl: "https://code.claude.com/docs/en/setup", signInCommand: "claude auth login" },
 	{ providerId: "antigravity", label: "Antigravity", vendor: "Google", runtime: "Antigravity ACP server", installUrl: "https://antigravity.google/docs/ide/extensions" },
 	{ providerId: "antigravity-cli", label: "Antigravity CLI", vendor: "Google", runtime: "agy", installUrl: "https://antigravity.google/docs/ide/extensions", signInCommand: "agy" },
 ];

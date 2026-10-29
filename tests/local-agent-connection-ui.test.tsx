@@ -43,7 +43,7 @@ test("rows name each vendor runtime and start disconnected", async () => {
 	serve({});
 	await mount();
 	const rows = [...document.querySelectorAll('[data-testid$="-connection"]')].map((row) => row.textContent);
-	assert.deepEqual(rows, ["Claude (Claude Code)Connect", "Antigravity (Antigravity ACP server)Connect", "Antigravity CLI (agy)Connect"]);
+	assert.deepEqual(rows, ["Antigravity (Antigravity ACP server)Connect", "Antigravity CLI (agy)Connect"]);
 });
 
 test("the settings list offers only the connections that are not hidden", async () => {
@@ -54,30 +54,30 @@ test("the settings list offers only the connections that are not hidden", async 
 	for (const hidden of HIDDEN_LOCAL_AGENTS) assert(!rows.includes(`${hidden}-connection`), hidden);
 });
 
-test("Claude: the dialog discloses the data flow, shows the CLI's own account, and the toggle enables it", async () => {
-	const { posts } = serve({ "claude-code": { installed: true, version: "2.1.310", signedIn: true, account: "learner@example.com", plan: "Max", usesSubscription: true } });
+test("Antigravity CLI: the dialog discloses the data flow, shows the CLI's own account, and the toggle enables it", async () => {
+	const { posts } = serve({ "antigravity-cli": { installed: true, version: "0.4.2", signedIn: true, account: "learner@example.com", plan: "Pro", usesSubscription: true } });
 	await mount();
-	await click(button("Connect", document.querySelector('[data-testid="claude-code-connection"]')!));
-	assert.equal(dialog().querySelector('[data-testid="local-agent-notice"]')?.textContent, localAgentNotice(LOCAL_AGENTS[0]!));
-	assert.match(localAgentNotice(LOCAL_AGENTS[0]!), /never sees or stores your Anthropic sign-in/);
-	assert.equal(dialog().querySelector('[data-testid="local-agent-account"]')?.textContent, "Signed in as learner@example.com · Max plan.");
-	assert(!dialog().textContent?.includes("Sign in with Google"));
-	await click(dialog().querySelector<HTMLElement>('[role="switch"][aria-label="Use Claude in LearnHarness"]')!);
-	assert.deepEqual(posts.at(-1), ["claude-code", { action: "enable", enabled: true }]);
+	await click(button("Connect", document.querySelector('[data-testid="antigravity-cli-connection"]')!));
+	assert.equal(dialog().querySelector('[data-testid="local-agent-notice"]')?.textContent, localAgentNotice(LOCAL_AGENTS[1]!));
+	assert.match(localAgentNotice(LOCAL_AGENTS[1]!), /never sees or stores your Google sign-in/);
+	assert.equal(dialog().querySelector('[data-testid="local-agent-account"]')?.textContent, "Signed in as learner@example.com · Pro plan.");
+	assert(!dialog().textContent?.includes("Sign in with Google"), "the CLI route signs in in a terminal, not through the app");
+	await click(dialog().querySelector<HTMLElement>('[role="switch"][aria-label="Use Antigravity CLI in LearnHarness"]')!);
+	assert.deepEqual(posts.at(-1), ["antigravity-cli", { action: "enable", enabled: true }]);
 });
 
-test("Claude: when signed out, sign-in stays in the terminal — the app offers no login", async () => {
-	serve({ "claude-code": { installed: true, signedIn: false } });
+test("Antigravity CLI: when signed out, sign-in stays in the terminal — the app offers no login", async () => {
+	serve({ "antigravity-cli": { installed: true, signedIn: false } });
 	await mount();
-	await click(button("Connect", document.querySelector('[data-testid="claude-code-connection"]')!));
-	assert.match(dialog().textContent ?? "", /Run claude auth login in a terminal, then Refresh\./);
+	await click(button("Connect", document.querySelector('[data-testid="antigravity-cli-connection"]')!));
+	assert.match(dialog().textContent ?? "", /Run agy in a terminal, then Refresh\./);
 	assert(![...dialog().querySelectorAll("button")].some((b) => /sign in/i.test(b.textContent ?? "")));
 });
 
-test("Claude: a non-subscription sign-in is called out", async () => {
-	serve({ "claude-code": { installed: true, signedIn: true, usesSubscription: false } });
+test("Antigravity CLI: a non-subscription sign-in is called out", async () => {
+	serve({ "antigravity-cli": { installed: true, signedIn: true, usesSubscription: false } });
 	await mount();
-	await click(button("Connect", document.querySelector('[data-testid="claude-code-connection"]')!));
+	await click(button("Connect", document.querySelector('[data-testid="antigravity-cli-connection"]')!));
 	assert(dialog().querySelector('[data-testid="local-agent-billing-warning"]'));
 });
 
@@ -95,11 +95,11 @@ test("a missing runtime links to its official install page", async () => {
 	serve({});
 	await mount();
 	await click(button("Connect", document.querySelector('[data-testid="antigravity-connection"]')!));
-	assert.equal(dialog().querySelector("a")?.getAttribute("href"), LOCAL_AGENTS[1]!.installUrl);
+	assert.equal(dialog().querySelector("a")?.getAttribute("href"), LOCAL_AGENTS[0]!.installUrl);
 });
 
 test("a slot pinned to a connection with background use off offers to enable it", async () => {
-	serve({ "claude-code": { installed: true, signedIn: true, enabled: true, connected: true, allowBackgroundUse: false } });
-	await mount(<LocalAgentBackgroundAccess provider="claude-code" />);
+	serve({ "antigravity-cli": { installed: true, signedIn: true, enabled: true, connected: true, allowBackgroundUse: false } });
+	await mount(<LocalAgentBackgroundAccess provider="antigravity-cli" />);
 	assert(button("Enable background use"));
 });
