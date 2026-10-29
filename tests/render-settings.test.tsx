@@ -104,13 +104,13 @@ describe("Providers settings-label typography", () => {
 			assert.ok(settings.includes(`<span class="font-prose text-(length:--lh-prose-size) text-foreground">${label}</span>`), `${label}: settings sans label`);
 			assert.ok(setup.includes(`<span class="font-ui text-xs text-foreground">${label}</span>`), `${label}: unchanged setup label`);
 		}
-		// Four, not three: this fork renders LocalAgentConnections inside
-		// SubscriptionConnections, which adds the Claude Code row to both
-		// surfaces (the Antigravity rows stay hidden). The count is a sanity
-		// check on the shared composition; the typography assertions above are
-		// what this test is actually about.
-		assert.equal((settings.match(/>Connect<\/button>/g) ?? []).length, 4);
-		assert.equal((setup.match(/>Connect<\/button>/g) ?? []).length, 4);
+		// Three: this fork renders LocalAgentConnections inside
+		// SubscriptionConnections, but every remaining local-agent route is
+		// hidden (HIDDEN_LOCAL_AGENTS), so it contributes no row. The count is
+		// a sanity check on the shared composition; the typography assertions
+		// above are what this test is actually about.
+		assert.equal((settings.match(/>Connect<\/button>/g) ?? []).length, 3);
+		assert.equal((setup.match(/>Connect<\/button>/g) ?? []).length, 3);
 	});
 });
 

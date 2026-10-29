@@ -5,7 +5,6 @@ import type { AdmissionScope } from "../subscription-request-cycle.ts";
 import type { AdapterProbe, LocalAgentAdapter } from "./adapter.ts";
 import { agyAdapter } from "./agy.ts";
 import { antigravityAdapter } from "./antigravity.ts";
-import { claudeAdapter } from "./claude.ts";
 import { closeProviderRuns } from "./run.ts";
 
 /**
@@ -37,7 +36,7 @@ interface State {
 const KEY = Symbol.for("lh.localAgents.state");
 function state(): State {
 	const g = globalThis as typeof globalThis & { [KEY]?: State };
-	return (g[KEY] ??= { providers: new Map(), listeners: new Set(), adapters: { "claude-code": claudeAdapter, antigravity: antigravityAdapter, "antigravity-cli": agyAdapter }, controllers: new Map() });
+	return (g[KEY] ??= { providers: new Map(), listeners: new Set(), adapters: { antigravity: antigravityAdapter, "antigravity-cli": agyAdapter }, controllers: new Map() });
 }
 
 export function isLocalAgentProvider(provider: string | undefined): provider is LocalAgentProviderId {

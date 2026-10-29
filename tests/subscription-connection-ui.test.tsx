@@ -50,11 +50,11 @@ test("compact rows render in approved order with no browser-only sign-in or fabr
 	const html = renderToStaticMarkup(<ChatGPTUIProvider><NativeSubscriptionUIProvider><SubscriptionConnections /></NativeSubscriptionUIProvider></ChatGPTUIProvider>);
 	assert(html.indexOf('data-testid="chatgpt-connection"') < html.indexOf('data-testid="github-copilot-connection"'));
 	assert(html.indexOf('data-testid="github-copilot-connection"') < html.indexOf('data-testid="xai-connection"'));
-	// Local agent connections (§8.2) follow the app-owned sign-ins.
-	assert(html.indexOf('data-testid="xai-connection"') < html.indexOf('data-testid="claude-code-connection"'));
-	// The Antigravity routes stay wired but are not offered here (HIDDEN_LOCAL_AGENTS).
+	// Local agent connections (§8.2) would follow the app-owned sign-ins, but
+	// every remaining route is hidden (HIDDEN_LOCAL_AGENTS), so none render.
+	// Claude Code is the native provider's own surface now, not a row here.
 	for (const hidden of HIDDEN_LOCAL_AGENTS) assert(!html.includes(`data-testid="${hidden}-connection"`), hidden);
-	assert.equal((html.match(/>Connect<\/button>/g) ?? []).length, 4);
+	assert.equal((html.match(/>Connect<\/button>/g) ?? []).length, 3);
 	assert(!html.includes("@")); assert(!html.includes("Add accounts"));
 });
 for (const [id, label] of [["github-copilot", "GitHub Copilot"], ["xai", "Grok"]] as const) test(`${id}: disclosure and connection are separate steps with no duplicated content or early authorization`, async () => {
