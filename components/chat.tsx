@@ -2,6 +2,7 @@
 
 import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChatSession } from "@/components/session";
+import { useKeyboardInset, usePhoneLayout } from "@/components/phone-layout-context";
 import { visibleQueuedSteers } from "@/components/session-core";
 import { SetupDialog } from "@/components/setup-dialog";
 import { Hint } from "@/components/ui/hint";
@@ -34,6 +35,7 @@ import { DictationBar, finishDictation, joinDictation, useDictation } from "@/co
 import { useFieldCycle } from "@/components/field-cycle";
 import { JobsContext } from "@/components/jobs-context";
 import { StatsBar } from "@/components/stats-bar";
+import { cn } from "@/lib/utils";
 import { useServerEvent, useServerResync } from "@/components/server-events";
 import {
 	isProviderKeyRefusal,
@@ -283,6 +285,8 @@ export function Chat({
 	const [renaming, setRenaming] = useState(false);
 	const [titleDraft, setTitleDraft] = useState("");
 	const titleInputRef = useRef<HTMLInputElement | null>(null);
+	const { compactTitle } = usePhoneLayout();
+	const titleSize = compactTitle ? "text-xl" : "text-3xl";
 
 	const commitRename = useCallback(
 		async (next: string) => {
@@ -1315,7 +1319,10 @@ export function Chat({
 								spellCheck={false}
 								aria-label="Session title"
 								title="Rename this session"
-								className="lh-no-drag min-w-[8ch] max-w-[70%] shrink-0 bg-transparent font-title text-3xl tracking-tight caret-current outline-none [field-sizing:content]"
+								className={cn(
+									"lh-no-drag min-w-[8ch] max-w-[70%] shrink-0 bg-transparent font-title tracking-tight caret-current outline-none [field-sizing:content]",
+									titleSize,
+								)}
 							/>
 							{/* flex-1 spacer during rename too, so the chips stay at
 							    the right edge; clicks here commit via the header
@@ -1336,7 +1343,10 @@ export function Chat({
 								setTitleDraft(titleText);
 								setRenaming(true);
 							}}
-							className="lh-no-drag -mx-1.5 min-w-4 shrink cursor-text truncate rounded-md px-1.5 text-left font-title text-3xl tracking-tight transition-colors hover:bg-accent"
+							className={cn(
+								"lh-no-drag -mx-1.5 min-w-4 shrink cursor-text truncate rounded-md px-1.5 text-left font-title tracking-tight transition-colors hover:bg-accent",
+								titleSize,
+							)}
 						>
 							{titleText}
 							</button>
@@ -2131,9 +2141,14 @@ function DockOverlay({
 	// effect below. Short windows scroll the reading/question/answer body;
 	// the stats/model toolbar remains outside that overflow viewport.
 	const [sbInset, setSbInset] = useState(0);
+	// The on-screen keyboard covers the bottom of the layout viewport without
+	// shrinking it (iOS), so the column measures taller than the room the dock
+	// actually has. It is an input to the height budget, not a cap over it.
+	const keyboard = useKeyboardInset();
 	useDockHeight({
 		scrollRef, blockRef, viewportRef, bodyRef, shellRef, contentRef,
 		expanded, enabled: !!pending || !!practice, mode, onScrollbarInset: setSbInset, onHeight: offer,
+		keyboardInset: keyboard.bottomInset,
 	});
 
 	// GROWTH MUTE (owner round, 2026-10-05 — the generation churn): during a
@@ -2333,7 +2348,11 @@ function DockOverlay({
 	return (
 		<div className="pointer-events-none absolute inset-x-0 bottom-0" style={{ right: sbInset }}>
 			<div className="h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
-			<div ref={blockRef} className="relative bg-background pb-5">
+			<div
+				ref={blockRef}
+				className="relative bg-background pb-5"
+				style={{ paddingBottom: "calc(1.25rem + var(--lh-keyboard-inset, 0px))" }}
+			>
 				<div className={DOCK}>
 					<div ref={viewportRef} data-dock-viewport="" className="pointer-events-auto">
 					<div ref={bodyRef}>

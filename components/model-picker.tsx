@@ -7,6 +7,7 @@ import { prettyModel } from "@/components/usage-format";
 import { ModelMenuList, ThinkingMenuList } from "@/components/settings/model-menu";
 import { composeSlotModel } from "@/components/settings/agent-section";
 import { MenuShell } from "@/components/menu-shell";
+import { useModelMenuWidth } from "@/components/phone-layout-context";
 import { Hint } from "@/components/ui/hint";
 import { notifySettingsSaved, useSettingsSaved } from "@/components/settings-signal";
 import { useModelCatalog } from "@/components/model-catalog";
@@ -39,6 +40,7 @@ export function catalogLimits(catalog: Pick<ModelCatalogResponse, "models">): Ma
  */
 export function ModelControl({ chatId, onModelChange }: { chatId?: string; onModelChange?: (model: string | undefined) => void }) {
 	const { catalog, refresh } = useModelCatalog();
+	const menuWidth = useModelMenuWidth();
 	const [models, setModels] = useState<ModelsSettings | undefined>();
 	// A successful read with no settings is a legacy session; undefined
 	// means no session record is known yet, not permission to inherit Strong.
@@ -336,6 +338,7 @@ export function ModelControl({ chatId, onModelChange }: { chatId?: string; onMod
 					testid="model-menu"
 					preferredSide="up"
 					menuClass="flex w-[22rem] flex-col rounded-xl border bg-card p-2 text-xs shadow-xl"
+					width={menuWidth}
 				>
 					{error && <div className="mb-1.5 text-destructive">{error}</div>}
 					<ModelMenuList

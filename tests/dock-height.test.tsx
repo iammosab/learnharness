@@ -226,6 +226,34 @@ describe("measured question/practice DOM and observer lifecycle", () => {
 			assert.deepEqual(syncDockHeight(elements, true), syncDockHeight(elements, true));
 		});
 	});
+	// The phone keyboard covers the bottom of the layout viewport without
+	// shrinking it (iOS), so the column measures taller than the dock's real
+	// room. It is an INPUT to this budget, not a cap applied over it: every
+	// derived height has to move together.
+	it("spends the on-screen keyboard out of the column before budgeting anything", async () => {
+		await withFixture(async (host, render) => {
+			await render();
+			const elements = { column: part(host, "column"), block: part(host, "block"), viewport: part(host, "viewport"),
+				body: part(host, "body"), shell: part(host, "shell"), content: part(host, "content") };
+			const open = syncDockHeight(elements, true, 200);
+			const down = syncDockHeight(elements, true, 0);
+			assert.equal(open.viewportMaxHeight, down.viewportMaxHeight - 200);
+			assert.equal(open.shellMaxHeight, down.shellMaxHeight - 200);
+			assert.equal(open.questionMaxHeight, (down.questionMaxHeight ?? 0) - 200);
+			assert.deepEqual(syncDockHeight(elements, true), down, "no inset is the same as a closed keyboard");
+		});
+	});
+	it("never budgets below zero when the keyboard covers the whole column", async () => {
+		await withFixture(async (host, render) => {
+			await render();
+			const elements = { column: part(host, "column"), block: part(host, "block"), viewport: part(host, "viewport"),
+				body: part(host, "body"), shell: part(host, "shell"), content: part(host, "content") };
+			const buried = syncDockHeight(elements, true, 10_000);
+			assert.equal(buried.viewportMaxHeight, 0);
+			assert.equal(buried.questionMaxHeight, 0);
+			assert.equal(buried.scrollWholeContent, true);
+		});
+	});
 });
 
 describe("wheel routing — question, short-window content, then transcript", () => {

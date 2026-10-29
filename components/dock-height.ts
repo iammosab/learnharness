@@ -50,7 +50,7 @@ const pixels = (value: string) => Number.parseFloat(value) || 0;
  * animated height out of both ancestor measurements, then substitute its
  * natural content and borders. This stays valid during a WAAPI height morph
  * and when the outer viewport is already capped. */
-export function syncDockHeight(elements: DockHeightElements, expanded: boolean) {
+export function syncDockHeight(elements: DockHeightElements, expanded: boolean, keyboardInset = 0) {
 	const { column, block, viewport, body, shell, content } = elements;
 	// QuestionDock keeps a laid-out form in an invisible h-0 wrapper;
 	// PracticeDock removes its form. Neither hidden form is a height input.
@@ -59,7 +59,11 @@ export function syncDockHeight(elements: DockHeightElements, expanded: boolean) 
 	const shellStyle = getComputedStyle(shell);
 	const questionStyle = question ? getComputedStyle(question) : null;
 	const budget = dockHeightBudget({
-		columnHeight: column.clientHeight,
+		// The on-screen keyboard covers the bottom of the layout viewport
+		// without shrinking it (iOS keeps dvh full height), so the column
+		// reads taller than the room the dock has. Everything below derives
+		// from this one number, so correcting it here is enough.
+		columnHeight: Math.max(column.clientHeight - keyboardInset, 0),
 		outsideHeight: Math.max(height(block) - height(viewport), 0),
 		beforeShellHeight: Math.max(height(body) - height(shell), 0),
 		shellBorderHeight: pixels(shellStyle.borderTopWidth) + pixels(shellStyle.borderBottomWidth),
@@ -92,10 +96,12 @@ interface DockHeightRefs {
 
 export function useDockHeight({
 	scrollRef, blockRef, viewportRef, bodyRef, shellRef, contentRef,
-	expanded, enabled, mode, onScrollbarInset, onHeight,
+	expanded, enabled, mode, onScrollbarInset, onHeight, keyboardInset = 0,
 }: DockHeightRefs & {
 	expanded: boolean;
 	enabled: boolean;
+	/** Height the on-screen keyboard covers, from useKeyboardInset(). */
+	keyboardInset?: number;
 	/** Reconnect observers when the keyed content node/scroll area changes. */
 	mode: string;
 	onScrollbarInset: (inset: number) => void;
@@ -111,7 +117,7 @@ export function useDockHeight({
 		const content = contentRef.current;
 		if (!column || !block || !viewport || !body || !shell || !content) return;
 		onScrollbarInset(Math.round((column.offsetWidth - column.clientWidth) / 2));
-		if (enabled) syncDockHeight({ column, block, viewport, body, shell, content }, expanded);
+		if (enabled) syncDockHeight({ column, block, viewport, body, shell, content }, expanded, keyboardInset);
 		else {
 			block.style.removeProperty("--dock-max-h");
 			viewport.style.removeProperty("max-height");
@@ -122,7 +128,7 @@ export function useDockHeight({
 		// did not rerender DockOverlay. Keep its transcript reserve current,
 		// but never report a mid-morph height.
 		if (shell.getAnimations().length === 0) onHeight(block.getBoundingClientRect().height);
-	}, [scrollRef, blockRef, viewportRef, bodyRef, shellRef, contentRef, expanded, enabled, onScrollbarInset, onHeight]);
+	}, [scrollRef, blockRef, viewportRef, bodyRef, shellRef, contentRef, expanded, enabled, onScrollbarInset, onHeight, keyboardInset]);
 
 	// Imperative constraints land before the overlay's later layout effect
 	// measures its morph target/reserve, and before paint (including reveal).

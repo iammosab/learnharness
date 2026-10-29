@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { CLAUDE_CODE_PROVIDER, subscriptionLabels, subscriptionLabel, type cliContextWindowOf, type SessionPricing, type TurnUsage } from "@/src/core";
 import { formatTokens, formatUsd, planCostLabel, prettyModel } from "@/components/usage-format";
 import { ModelControl, catalogLimits, useModelCatalog } from "@/components/model-picker";
+import { usePhoneLayout } from "@/components/phone-layout-context";
+import { cn } from "@/lib/utils";
 
 export function formatContextMeasurement(tokens: number | null, limit: number | null): string {
 	const numerator = tokens === null ? "?" : formatTokens(tokens);
@@ -74,6 +76,7 @@ export function StatsBar({
 		setSelectedModel(model);
 		onModelChange?.(model);
 	}, [onModelChange]);
+	const { wrapControls } = usePhoneLayout();
 	// Same dropdown discipline as the model control (owner, df4433f treatment,
 	// stats round 1): close on any pointerdown outside the bar or on Escape.
 	const barRef = useRef<HTMLDivElement>(null);
@@ -119,7 +122,10 @@ export function StatsBar({
 			// (so its transparent gradient area never blocks scrolling) — this row
 			// must re-enable events or every control on it is dead (the model-
 			// control wave caught this live: buttons rendered, clicks never landed).
-			className="pointer-events-auto relative flex items-center justify-between gap-3 px-3 pt-2 text-xs text-muted-foreground"
+			className={cn(
+				"pointer-events-auto relative flex items-center justify-between gap-3 px-3 pt-2 text-xs text-muted-foreground",
+				wrapControls && "flex-wrap gap-y-2",
+			)}
 		>
 			{/* The summary button + its popover: the popover anchors to this
 			    wrapper, CENTERED over the button itself (owner, stats round 2)

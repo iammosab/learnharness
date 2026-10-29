@@ -53,6 +53,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MenuShell } from "@/components/menu-shell";
+import { useModelMenuWidth } from "@/components/phone-layout-context";
 import { useSettingsSaved } from "@/components/settings-signal";
 import { defaultOrderLevel, populateLevel } from "@/components/thinking-default";
 import { useModelCatalog } from "@/components/model-catalog";
@@ -293,6 +294,7 @@ export function AgentSection({
 	/** Writes the whole compaction section (replace-PUT discipline). */
 	onCompactionChange: (next: CompactionSettings) => void;
 }) {
+	const menuWidth = useModelMenuWidth();
 	const { catalog: body, failed: catalogFailed, refresh: refreshCatalog } = useModelCatalog();
 	const catalog = body?.models;
 	const slots = body?.slots;
@@ -643,6 +645,7 @@ export function AgentSection({
 											anchorTestid={`slot-model-${slot}`}
 										testid={`slot-model-menu-${slot}`}
 										menuClass="flex w-[22rem] flex-col rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
+										width={menuWidth}
 									>
 										<ModelMenuList
 											models={catalog ?? undefined}

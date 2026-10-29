@@ -598,3 +598,24 @@ body {
 	outline: 1px solid var(--border);
 	border-radius: 0.25rem;
 }
+
+/* iOS zooms the page when a focused text control is under 16px. Unlayered,
+   so it outranks the utility font sizes.
+
+   The width is NARROW_WIDTH - 0.02 (components/phone-layout.ts, which owns
+   the number: `width < 928`). A media query cannot read a TS constant, so
+   this is the one copy CSS forces — there is no second one, and the TS side
+   must stay the single source for every width decision in JS.
+
+   [contenteditable] is load-bearing, not belt-and-braces: the composer, the
+   practice dock and the reading field are contentEditable divs with
+   role="textbox" (components/path-input.tsx), so input/textarea/select alone
+   would leave every main text surface zooming on focus. */
+@media (max-width: 927.98px) and (pointer: coarse) {
+	input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+	textarea,
+	select,
+	[contenteditable]:not([contenteditable="false"]) {
+		font-size: 16px;
+	}
+}
